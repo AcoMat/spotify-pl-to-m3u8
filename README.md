@@ -3,9 +3,9 @@
 ## Match your .mp3 files with your spotify playlist
 
 ### Configuration
-You will need a .env file in the script directory with the variables:
+You will need a .env file in the script directory with this variables:
 
-| Key (config)                 | Value                |
+| Key                          | Value                                  |
 |------------------------------|----------------------------------------|
 | SPOTIFY_CLIENT_ID            | developer.spotify.com/dashboard        | 
 | SPOTIFY_CLIENT_SECRET        | developer.spotify.com/dashboard        | 
