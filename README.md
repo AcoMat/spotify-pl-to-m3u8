@@ -5,7 +5,7 @@
 ### Configuration
 You will need a .env file in the script directory with the variables:
 
-| Key (config)                 | Commandline parameter                  |
+| Key (config)                 | Value                |
 |------------------------------|----------------------------------------|
 | SPOTIFY_CLIENT_ID            | developer.spotify.com/dashboard        | 
 | SPOTIFY_CLIENT_SECRET        | developer.spotify.com/dashboard        | 
