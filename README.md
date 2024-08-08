@@ -19,5 +19,5 @@ You will need a .env file in the script directory with the variables:
 ### Usage
 
 ```
-python spotify_playlist_to_m3u8.py --playlist_ur=`<spotify playlist ur>`
+python spotify_playlist_to_m3u8.py --playlist_ur=<spotify playlist ur>
 ```
