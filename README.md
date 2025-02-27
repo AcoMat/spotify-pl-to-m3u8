@@ -1,20 +1,19 @@
-# Spoty playlist to .m3u8
+# Playlists Spotify a .M3U8
 
-## Match your .mp3 files with your spotify playlist
+Convierte listas de reproducción de Spotify en listas de reproducción .M3U8 escaneando tu biblioteca de música local.
 
-### Configuration
-You will need a .env file in the script directory with this variables:
-
-| Key                          | Value                                  |
-|------------------------------|----------------------------------------|
-| SPOTIFY_CLIENT_ID            | developer.spotify.com/dashboard        | 
-| SPOTIFY_CLIENT_SECRET        | developer.spotify.com/dashboard        | 
-| MUSIC_DIRECTORY              | Where the script will search the files | 
-| OUTPUT_FILE_DIR              | Where the script will write the .m3u8  | 
+### Motivación del script
+Reproducir mis playlist de spotify en 'Poweramp' con mis .mp3 descargados en mi celular
 
 
-### Usage
+## Requisitos
+
+- mutagen
+- rapidfuzz
+- credenciales API de SPOTIFY
+
+## Uso
 
 ```
-python spotify_playlist_to_m3u8.py --playlist_ur=<spotify playlist ur>
+python spotfy_playlist_gui.py
 ```
