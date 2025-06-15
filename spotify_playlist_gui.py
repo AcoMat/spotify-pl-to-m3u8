@@ -35,9 +35,13 @@ class SpotifyPlaylistConverterGUI:
         self.root.geometry("800x600")
         self.root.minsize(600, 500)
 
-        icon = tk.PhotoImage(file=get_resource_path("icon.png"))
-        self.root.iconphoto(True, icon)
- 
+        # Try to set window icon, but continue gracefully if icon.png is missing
+        try:
+            icon = tk.PhotoImage(file=get_resource_path("icon.png"))
+            self.root.iconphoto(True, icon)
+        except Exception:
+            pass  # If icon.png is missing or invalid, just skip setting the icon
+
         # Cargar configuración si existe
         self.config_file = "config.ini"
         self.config = configparser.ConfigParser()
