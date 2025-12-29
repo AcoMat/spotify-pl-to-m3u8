@@ -1,1 +1,0 @@
-#TODO: When the playlist is owned by spotify the api returns 403 forbidden
