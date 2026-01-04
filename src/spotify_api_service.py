@@ -8,7 +8,7 @@ BASE_PLAYLIST_URL = "https://api.spotify.com/v1/playlists/"
 
 def get_access_token():
     if not CLIENT_ID or not CLIENT_SECRET:
-        raise RuntimeError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment")
+        raise RuntimeError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment variables")
 
     try:
         auth_response = requests.post(
@@ -70,9 +70,9 @@ def get_playlist_tracks(playlist_id: str, access_token: str) -> list[dict]:
     }
 
     tracks: list[dict] = []
-    total = None
+    total_tracks = None
 
-    while total is None or len(tracks) < total:
+    while total_tracks is None or len(tracks) < total_tracks:
         if tracks:
             params['offset'] = len(tracks)
         response = requests.get(
@@ -83,24 +83,27 @@ def get_playlist_tracks(playlist_id: str, access_token: str) -> list[dict]:
         )
         response.raise_for_status()
         chunk = response.json()
-        if total is None:
-            total = chunk.get('total', 0)
+        if total_tracks is None:
+            total_tracks = chunk.get('total', 0)
 
         for item in chunk.get('items', []):
-            track = item.get('track') or {}
-            album = track.get('album') or {}
-            artists = track.get('artists') or []
-            artist_names = ", ".join(a.get('name') for a in artists if a.get('name')) or None
-
             tracks.append({
-                "id": track.get("id"),
-                "name": track.get("name"),
-                "title": track.get("name"),
-                "album": album.get("name"),
-                "release_date": album.get("release_date"),
-                "artist": artist_names,
-                "duration_ms": track.get("duration_ms"),
-                "track_number": track.get("track_number"),
+                "id": item.get('track').get("id"),
+                "title": item.get('track').get("name"),
+                "album": item.get('track').get('album').get("name"),
+                "release_date": item.get('track').get('album').get("release_date"),
+                "artist": ", ".join(a.get('name') for a in item.get('track').get('artists') if a.get('name')) or None,
+                "duration_ms": item.get('track').get("duration_ms"),
+                "track_number": item.get('track').get("track_number"),
             })
 
     return tracks
+
+def get_playlist(playlist_id: str) -> dict:
+    """Fetch complete playlist information including tracks from a Spotify playlist URL."""
+    access_token = get_access_token()
+    playlist = get_playlist_info(playlist_id, access_token)
+    playlist_tracks = get_playlist_tracks(playlist_id, access_token)
+    playlist['tracks'] = playlist_tracks
+    return playlist
+    

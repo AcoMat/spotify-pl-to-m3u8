@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spot-the-local"
+version = "0.1.0"
+description = "Convert Spotify and YouTube Music playlists to local M3U8 playlists"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mutagen",
+    "platformdirs",
+    "requests",
+    "ytmusicapi",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+spot-the-local = "main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = [""]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

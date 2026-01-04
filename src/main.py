@@ -1,20 +1,29 @@
-import sys
-import spotify_api_client
-import music_repository
 import os
+import argparse
+from pathlib import Path
 
-LOCAL_LIBRARY_ROOT = "D:/Music"
-OUTPUT_M3U8_BASE_ROOT = "D:/Playlists"
+from platformdirs import user_music_dir
 
-INPUT_PLAYLIST_URL = sys.argv[1] if len(sys.argv) > 1 else None
+import music_repository
+import spotify_api_service
+import youtube_music_api_service
 
-LOCAL_PATHS = []
-#   TODO: Multi-threading for faster processing
+# Default to the OS user music directory provided by platformdirs
+DEFAULT_MUSIC_DIR = Path(user_music_dir())
 
-def _gen_m3u8_file(filename: str, matched_tracks: list[dict], missing_tracks: list[dict]):
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate an M3U8 playlist from a Spotify or YouTube Music playlist using local files.")
+    parser.add_argument("playlist_url", help="Spotify or YouTube Music playlist URL")
+    parser.add_argument("--music-dir", type=Path, default=DEFAULT_MUSIC_DIR, help="Path to your local music library. Defaults to the OS user music directory.")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_MUSIC_DIR, help="Directory to write the generated M3U8 file. Defaults to the OS user music directory.")
+    return parser.parse_args()
+
+
+def _gen_m3u8_file(filename: str, matched_tracks: list[dict], missing_tracks: list[dict], output_base_root: Path):
     """Generate an M3U8 playlist file."""
-    os.makedirs(OUTPUT_M3U8_BASE_ROOT, exist_ok=True)
-    filename = OUTPUT_M3U8_BASE_ROOT + "/" + filename
+    output_base_root.mkdir(parents=True, exist_ok=True)
+    filename = output_base_root / filename
     with open(filename, "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
         for track in matched_tracks:
@@ -22,7 +31,7 @@ def _gen_m3u8_file(filename: str, matched_tracks: list[dict], missing_tracks: li
             title = track.get('title') or track.get('name') or "Unknown Title"
             duration_ms = track.get('duration_ms') or 0
             f.write(f"#EXTINF:{duration_ms // 1000},{artist} - {title}\n")
-            relative_path = os.path.relpath(track['path'], OUTPUT_M3U8_BASE_ROOT)
+            relative_path = os.path.relpath(track['path'], output_base_root)
             f.write(f"{relative_path}\n")
         
         if missing_tracks:
@@ -32,28 +41,27 @@ def _gen_m3u8_file(filename: str, matched_tracks: list[dict], missing_tracks: li
                 album = track.get('album', {}).get('name') if isinstance(track.get('album'), dict) else track.get('album', 'Unknown Album')
                 f.write(f"# {title} - {album}\n")                
 
+def main():
+    args = _parse_args()
 
-if __name__ == "__main__":
-    if INPUT_PLAYLIST_URL is None: raise ValueError("No playlist URL provided.")
-    
-    music_repository.refresh_db_with_local(LOCAL_LIBRARY_ROOT)
+    music_repository.refresh_db_with_local(args.music_dir)
 
-    url_lower = INPUT_PLAYLIST_URL.lower()
+    input_playlist_url = args.playlist_url.lower()
     
-    playlist_info = None
-    playlist_tracks = None
+    playlist = None
     
-    if "spotify.com" in url_lower:
-        access_token = spotify_api_client.get_access_token()
-        playlist_id = INPUT_PLAYLIST_URL.rstrip("/").split("/")[-1].split("?")[0] # URL Format
-        playlist_info = spotify_api_client.get_playlist_info(playlist_id, access_token)
-        playlist_tracks = spotify_api_client.get_playlist_tracks(playlist_id, access_token)
-    elif "music.youtube.com" in url_lower or ("youtube.com" in url_lower and "list=" in url_lower):
-        raise NotImplementedError("YouTube Music playlist support is not implemented yet.")
-    
+    if "spotify.com" in input_playlist_url:
+        playlist_id = args.playlist_url.rstrip("/").split("/")[-1].split("?")[0] 
+        playlist = spotify_api_service.get_playlist(playlist_id)
+    elif "music.youtube.com" in input_playlist_url or ("youtube.com" in input_playlist_url and "list=" in input_playlist_url):
+        playlist_id = args.playlist_url.split("list=")[-1].split("&")[0]  # Extract playlist ID from URL
+        playlist = youtube_music_api_service.get_playlist(playlist_id)
+    else:
+        raise ValueError("Unsupported playlist URL. Provide a Spotify or YouTube Music playlist URL.")
+
     matched_tracks = []
     missing_tracks = []
-    for track in playlist_tracks:
+    for track in playlist.get('tracks', []):
         local_track = music_repository.get_track_from_local(track)
         if local_track:
             if 'artist' not in local_track:
@@ -62,9 +70,7 @@ if __name__ == "__main__":
         else:
             missing_tracks.append(track)
             
-    _gen_m3u8_file(f"{playlist_info['name']}.m3u8", matched_tracks, missing_tracks)
-            
-        
-            
-    
-    
+    _gen_m3u8_file(f"{playlist['name']}.m3u8", matched_tracks, missing_tracks, args.output_dir)
+
+if __name__ == "__main__":
+    main()
