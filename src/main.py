@@ -1,12 +1,13 @@
 import os
+import sys
 import argparse
 from pathlib import Path
 
 from platformdirs import user_music_dir
 
 import music_repository
-import spotify_api_service
-import youtube_music_api_service
+import spotify_service
+import yt_music_service
 
 # Default to the OS user music directory provided by platformdirs
 DEFAULT_MUSIC_DIR = Path(user_music_dir())
@@ -38,26 +39,79 @@ def _gen_m3u8_file(filename: str, matched_tracks: list[dict], missing_tracks: li
             f.write("\n# Missing Tracks\n")
             for track in missing_tracks:
                 title = track.get('title') or track.get('name') or "Unknown Title"
-                album = track.get('album', {}).get('name') if isinstance(track.get('album'), dict) else track.get('album', 'Unknown Album')
+                album = track.get('album_name', 'Unknown Album')
                 f.write(f"# {title} - {album}\n")                
 
 def main():
     args = _parse_args()
 
+    # Validate playlist URL is provided
+    if not args.playlist_url or not args.playlist_url.strip():
+        print("Error: Playlist URL is required.", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate music directory exists
+    if not args.music_dir.exists():
+        print(f"Error: Music directory does not exist: {args.music_dir}", file=sys.stderr)
+        sys.exit(1)
+    
+    if not args.music_dir.is_dir():
+        print(f"Error: Music directory path is not a directory: {args.music_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate output directory exists or can be created
+    if not args.output_dir.exists():
+        try:
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"Error: Cannot create output directory {args.output_dir}: {e}", file=sys.stderr)
+            sys.exit(1)
+    
+    if not args.output_dir.is_dir():
+        print(f"Error: Output directory path is not a directory: {args.output_dir}", file=sys.stderr)
+        sys.exit(1)
+
     music_repository.refresh_db_with_local(args.music_dir)
 
-    input_playlist_url = args.playlist_url.lower()
+    input_playlist_url = args.playlist_url.strip().lower()
     
     playlist = None
     
     if "spotify.com" in input_playlist_url:
-        playlist_id = args.playlist_url.rstrip("/").split("/")[-1].split("?")[0] 
-        playlist = spotify_api_service.get_playlist(playlist_id)
+        try:
+            playlist_id = args.playlist_url.rstrip("/").split("/")[-1].split("?")[0]
+            if not playlist_id:
+                print("Error: Could not extract playlist ID from Spotify URL.", file=sys.stderr)
+                sys.exit(1)
+            playlist = spotify_service.get_playlist(playlist_id)
+        except Exception as e:
+            print(f"Error: Failed to retrieve Spotify playlist: {e}", file=sys.stderr)
+            sys.exit(1)
     elif "music.youtube.com" in input_playlist_url or ("youtube.com" in input_playlist_url and "list=" in input_playlist_url):
-        playlist_id = args.playlist_url.split("list=")[-1].split("&")[0]  # Extract playlist ID from URL
-        playlist = youtube_music_api_service.get_playlist(playlist_id)
+        try:
+            if "list=" not in args.playlist_url:
+                print("Error: Could not find 'list=' parameter in YouTube URL.", file=sys.stderr)
+                sys.exit(1)
+            playlist_id = args.playlist_url.split("list=")[-1].split("&")[0]
+            if not playlist_id:
+                print("Error: Could not extract playlist ID from YouTube URL.", file=sys.stderr)
+                sys.exit(1)
+            playlist = yt_music_service.get_playlist(playlist_id)
+        except Exception as e:
+            print(f"Error: Failed to retrieve YouTube Music playlist: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
-        raise ValueError("Unsupported playlist URL. Provide a Spotify or YouTube Music playlist URL.")
+        print("Error: Unsupported playlist URL. Please provide a Spotify or YouTube Music playlist URL.", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate playlist was retrieved successfully
+    if not playlist:
+        print("Error: Failed to retrieve playlist data.", file=sys.stderr)
+        sys.exit(1)
+    
+    if 'name' not in playlist:
+        print("Error: Playlist data is missing required 'name' field.", file=sys.stderr)
+        sys.exit(1)
 
     matched_tracks = []
     missing_tracks = []

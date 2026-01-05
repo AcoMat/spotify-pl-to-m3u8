@@ -1,4 +1,5 @@
 
+import re
 import sqlite3
 from mutagen import File
 from mutagen.id3 import ID3
@@ -19,10 +20,10 @@ def _init_database(db_path):
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tracks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            spotify_id TEXT UNIQUE,
+            local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            online_id TEXT UNIQUE,
             title TEXT,
-            album TEXT,
+            album_name TEXT,
             album_artist TEXT,
             track TEXT,
             year TEXT,
@@ -69,13 +70,13 @@ def _read_metadata(path: Path) -> dict | None:
     def get(key):
         return audio.get(key, [None])[0]
 
-    album = get("album")
+    album_name = get("album")
     album_artist = get("albumartist")
     title = get("title")
     track = get("tracknumber")
     year = get("date")
     duration_ms = int(audio.info.length * 1000) if audio.info else None
-    spotify_id = None
+    online_id = None
 
     # MP3 → ID3 (WOAS)
     if path.suffix.lower() == ".mp3":
@@ -83,7 +84,7 @@ def _read_metadata(path: Path) -> dict | None:
             id3 = ID3(path)
             woas = id3.get("WOAS")
             if woas:
-                spotify_id = woas.url.rstrip("/").split("/")[-1]
+                online_id = woas.url.rstrip("/").split("/")[-1]
         except Exception:
             pass
 
@@ -91,18 +92,18 @@ def _read_metadata(path: Path) -> dict | None:
     elif path.suffix.lower() in {".m4a", ".mp4"}:
         url = audio.tags.get("©url", [None])[0] if audio.tags else None
         if url and "spotify.com" in url:
-            spotify_id = url.rstrip("/").split("/")[-1]
+            online_id = url.rstrip("/").split("/")[-1]
 
     # FLAC / OGG / OPUS → URL
     else:
         url = get("url") or get("source")
         if url and "spotify.com" in url:
-            spotify_id = url.rstrip("/").split("/")[-1]
+            online_id = url.rstrip("/").split("/")[-1]
 
     return {
-        "spotify_id": spotify_id,
+        "online_id": online_id,
         "title": title,
-        "album": album,
+        "album_name": album_name,
         "album_artist": album_artist,
         "track": track,
         "year": year,
@@ -118,21 +119,21 @@ def _fill_database_with_tracks(conn, root):
         meta = _read_metadata(file_path)
         if meta:
             # Normalize text fields
-            meta['spotify_id'] = _normalize_text(meta.get('spotify_id'))
+            meta['online_id'] = meta.get('online_id')
             meta['title'] = _normalize_text(meta.get('title'))
-            meta['album'] = _normalize_text(meta.get('album'))
+            meta['album_name'] = _normalize_text(meta.get('album_name'))
             meta['album_artist'] = _normalize_text(meta.get('album_artist'))
             meta['track'] = _normalize_text(meta.get('track'))
             meta['year'] = _normalize_text(meta.get('year'))
             
             try:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO tracks (spotify_id, title, album, album_artist, track, year, duration_ms, path)
+                    INSERT OR IGNORE INTO tracks (online_id, title, album_name, album_artist, track, year, duration_ms, path)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    meta['spotify_id'],
+                    meta['online_id'],
                     meta['title'],
-                    meta['album'],
+                    meta['album_name'],
                     meta['album_artist'],
                     meta['track'],
                     meta['year'],
@@ -152,7 +153,7 @@ def refresh_db_with_local(root):
 
 def get_track_from_local(track: dict):
     """
-    Query the database for a single track by Spotify ID or by title and album.
+    Query the database for a single track by multiple strategies.
     Returns matched track info or None if not found.
     """
     if not track:
@@ -161,42 +162,135 @@ def get_track_from_local(track: dict):
     conn = _get_database_connection()
     cursor = conn.cursor()
 
-    spotify_id = track.get("id") or track.get("spotify_id")
-    album = track.get("album") if isinstance(track, dict) else None
-    album_name = album.get("name") if isinstance(album, dict) else album
-    title = track.get("name") or track.get("title")
+    strategies = [
+        lambda: _search_by_online_id(cursor, track),
+        lambda: _search_by_title_album(cursor, track),
+        lambda: _search_by_similarity(cursor, track),
+    ]
     
-    rows = []
+    for strategy in strategies:
+        result = strategy()
+        if result:
+            return result
     
-    if spotify_id:
-        spotify_id = _normalize_text(spotify_id)
-        query = "SELECT * FROM tracks WHERE spotify_id = ?"
-        params = (spotify_id,)
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        
-    if len(rows) == 0 and title and album_name:
-        title = _normalize_text(title)
-        album_name = _normalize_text(album_name)
-        query = "SELECT * FROM tracks WHERE title = ? AND album = ?"
-        params = (title, album_name)
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        
-    if len(rows) == 0 or len(rows) != 1:
-        conn.close()
-        return None
-    
-    row = rows[0]
     conn.close()
+    return None
+
+def _search_by_online_id(cursor, track):
+    online_id = track.get("id")
+    query = "SELECT * FROM tracks WHERE online_id = ?"
+    cursor.execute(query, (online_id,))
+    res = cursor.fetchall()
+    if len(res) != 1:
+        return None
+    row = res[0]
+    
+    #simple validation with title match
+    title = _normalize_text(track.get("name") or track.get("title"))
+    if title != row[2]:
+        return None
+
     return {
-        "spotify_id": row[1],
+        "online_id": row[1],
         "title": row[2],
-        "album": row[3],
+        "album_name": row[3],
         "album_artist": row[4],
         "track": row[5],
         "year": row[6],
         "duration_ms": row[7],
         "path": row[8],
     }
-        
+
+def _search_by_title_album(cursor, track):
+    title = track.get("name") or track.get("title")
+    title = _normalize_text(title)
+    album_name = _normalize_text(track.get("album_name"))
+    query = "SELECT * FROM tracks WHERE title = ? AND album_name = ?"
+    cursor.execute(query, (title, album_name))
+    res = cursor.fetchall()
+    if len(res) != 1:
+        return None
+    row = res[0]
+    return {
+        "online_id": row[1],
+        "title": row[2],
+        "album_name": row[3],
+        "album_artist": row[4],
+        "track": row[5],
+        "year": row[6],
+        "duration_ms": row[7],
+        "path": row[8],
+    }
+
+def _search_by_similarity(cursor, track):
+    title = _normalize_text(track.get('name') or track.get('title'))
+    album_name = _normalize_text(track.get('album_name'))
+
+    if title is None or album_name is None:
+        return None
+    
+    # Remove parentheses/brackets with years, dates, or remaster terms
+    # Matches patterns like: (2024), [2024], (Remastered), (Remasterizado 2024), etc.
+    title = re.sub(r'[\(\[]\s*(?:\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|remaster(?:ed|izado)?.*?)\s*[\)\]]', '', title, flags=re.IGNORECASE)
+    album_name = re.sub(r'[\(\[]\s*(?:\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|remaster(?:ed|izado)?.*?)\s*[\)\]]', '', album_name, flags=re.IGNORECASE)
+    
+    # Remove standalone years (4 digits)
+    title = re.sub(r'\b\d{4}\b', '', title)
+    album_name = re.sub(r'\b\d{4}\b', '', album_name)
+    
+    # Remove common remaster/edition terms
+    title = re.sub(r'\b(remaster(ed|izado)?|deluxe|edition|edici[oó]n|version|versi[oó]n|bonus track(s)?|pistas adicionales?|expanded?|ampliado?|anniversary|aniversario)\b', '', title, flags=re.IGNORECASE)
+    album_name = re.sub(r'\b(remaster(ed|izado)?|deluxe|edition|edici[oó]n|version|versi[oó]n|bonus track(s)?|pistas adicionales?|expanded?|ampliado?|anniversary|aniversario)\b', '', album_name, flags=re.IGNORECASE)
+    
+    # Clean up extra whitespace
+    title = re.sub(r'\s+', ' ', title).strip()
+    album_name = re.sub(r'\s+', ' ', album_name).strip()
+    
+    # Normalize artist and extract year from release_date
+    artist = _normalize_text(track.get('artist')) if track.get('artist') else None
+    release_date = track.get('release_date')
+    year = release_date[:4] if release_date and len(release_date) >= 4 else None
+    
+    # Build query with approximate matching
+    query = """
+        SELECT * FROM tracks 
+        WHERE title LIKE ? 
+        AND album_name LIKE ?
+    """
+    params = [f"%{title}%", f"%{album_name}%"]
+    
+    # Add optional artist matching
+    if artist:
+        query += " AND (album_artist LIKE ? OR album_artist IS NULL)"
+        params.append(f"%{artist}%")
+    
+    duration_ms = track.get('duration_ms')
+    # Add duration matching with ±5 seconds tolerance
+    if duration_ms:
+        tolerance = 5000  # 5 seconds in milliseconds
+        query += " AND (duration_ms BETWEEN ? AND ? OR duration_ms IS NULL)"
+        params.extend([duration_ms - tolerance, duration_ms + tolerance])
+    
+    # Add year matching with ±1 year tolerance
+    if year:
+        query += " AND (year LIKE ? OR year LIKE ? OR year LIKE ? OR year IS NULL)"
+        params.extend([f"%{int(year)-1}%", f"%{year}%", f"%{int(year)+1}%"])
+    
+    cursor.execute(query, params)
+    results = cursor.fetchall()
+    
+    if len(results) != 1:
+        return None
+    
+    row = results[0]
+    return {
+        "online_id": row[1],
+        "title": row[2],
+        "album_name": row[3],
+        "album_artist": row[4],
+        "track": row[5],
+        "year": row[6],
+        "duration_ms": row[7],
+        "path": row[8],
+    }
+    

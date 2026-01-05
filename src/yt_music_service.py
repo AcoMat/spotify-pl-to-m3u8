@@ -17,7 +17,7 @@ def get_playlist(playlist_id: str) -> list[dict]:
             tracks.append({
                 "id": item.get("videoId"),
                 "title": item.get("title"),
-                "album": item.get("album", {}).get("name"),
+                "album_name": item.get("album", {}).get("name"),
                 "release_date": item.get("album", {}).get("year"),
                 "artist": ", ".join(artist.get("name") for artist in item.get("artists", [])),
                 "duration_ms": int(item.get("duration_seconds", 0)) * 1000,

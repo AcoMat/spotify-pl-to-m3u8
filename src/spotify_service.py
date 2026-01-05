@@ -90,7 +90,7 @@ def get_playlist_tracks(playlist_id: str, access_token: str) -> list[dict]:
             tracks.append({
                 "id": item.get('track').get("id"),
                 "title": item.get('track').get("name"),
-                "album": item.get('track').get('album').get("name"),
+                "album_name": item.get('track').get('album').get("name"),
                 "release_date": item.get('track').get('album').get("release_date"),
                 "artist": ", ".join(a.get('name') for a in item.get('track').get('artists') if a.get('name')) or None,
                 "duration_ms": item.get('track').get("duration_ms"),
