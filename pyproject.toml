@@ -27,7 +27,7 @@ spot-the-local = "main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = [""]
+py-modules = ["main", "music_repository", "spotify_service", "yt_music_service", "util"]
 
 [tool.black]
 line-length = 120

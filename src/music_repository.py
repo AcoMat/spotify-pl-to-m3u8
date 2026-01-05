@@ -165,7 +165,7 @@ def get_track_from_local(track: dict):
     strategies = [
         lambda: _search_by_online_id(cursor, track),
         lambda: _search_by_title_album(cursor, track),
-        lambda: _search_by_similarity(cursor, track),
+        lambda: _search_by_approx(cursor, track),
     ]
     
     for strategy in strategies:
@@ -222,30 +222,34 @@ def _search_by_title_album(cursor, track):
         "path": row[8],
     }
 
-def _search_by_similarity(cursor, track):
+def _search_by_approx(cursor, track):
     title = _normalize_text(track.get('name') or track.get('title'))
-    album_name = _normalize_text(track.get('album_name'))
-
-    if title is None or album_name is None:
+    
+    if title is None:
         return None
     
-    # Remove parentheses/brackets with years, dates, or remaster terms
-    # Matches patterns like: (2024), [2024], (Remastered), (Remasterizado 2024), etc.
-    title = re.sub(r'[\(\[]\s*(?:\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|remaster(?:ed|izado)?.*?)\s*[\)\]]', '', title, flags=re.IGNORECASE)
-    album_name = re.sub(r'[\(\[]\s*(?:\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|remaster(?:ed|izado)?.*?)\s*[\)\]]', '', album_name, flags=re.IGNORECASE)
-    
-    # Remove standalone years (4 digits)
-    title = re.sub(r'\b\d{4}\b', '', title)
-    album_name = re.sub(r'\b\d{4}\b', '', album_name)
-    
-    # Remove common remaster/edition terms
-    title = re.sub(r'\b(remaster(ed|izado)?|deluxe|edition|edici[oó]n|version|versi[oó]n|bonus track(s)?|pistas adicionales?|expanded?|ampliado?|anniversary|aniversario)\b', '', title, flags=re.IGNORECASE)
-    album_name = re.sub(r'\b(remaster(ed|izado)?|deluxe|edition|edici[oó]n|version|versi[oó]n|bonus track(s)?|pistas adicionales?|expanded?|ampliado?|anniversary|aniversario)\b', '', album_name, flags=re.IGNORECASE)
-    
-    # Clean up extra whitespace
+    # Single comprehensive pattern to remove content in parentheses/brackets
+    # Matches: years, dates, remaster terms, featuring, performance types, etc.
+    title = re.sub(
+        r'[\(\[]\s*(?:'
+        r'\d{4}|'  # years
+        r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|'  # dates
+        r'(?:feat\.?|ft\.?|featuring|with|con|w/).*?|'  # featuring
+        r'(?:live|acoustic|ac[uú]stic[ao]?|radio edit|unplugged|en vivo|'
+        r'instrumental|a cappella|remix|remezcla|single|original mix|extended|oficial).*?|'  # performance types
+        r'remaster(?:ed|izado)?.*?'  # remaster variations
+        r')\s*[\)\]]',
+        '', title, flags=re.IGNORECASE
+    )
+    # Remove standalone years and common edition terms
+    title = re.sub(
+        r'\b(?:\d{4}|remaster(?:ed|izado)?|deluxe|edition|edici[oó]n|version|versi[oó]n|'
+        r'bonus tracks?|pistas adicionales?|expanded?|ampliado?|anniversary|aniversario)\b',
+        '', title, flags=re.IGNORECASE
+    )
+    # Clean up empty brackets and extra whitespace/dashes
+    title = re.sub(r'[\(\[]\s*[\)\]]|[-–—]\s*$', '', title)
     title = re.sub(r'\s+', ' ', title).strip()
-    album_name = re.sub(r'\s+', ' ', album_name).strip()
-    
     # Normalize artist and extract year from release_date
     artist = _normalize_text(track.get('artist')) if track.get('artist') else None
     release_date = track.get('release_date')
@@ -255,9 +259,8 @@ def _search_by_similarity(cursor, track):
     query = """
         SELECT * FROM tracks 
         WHERE title LIKE ? 
-        AND album_name LIKE ?
     """
-    params = [f"%{title}%", f"%{album_name}%"]
+    params = [f"%{title}%"]
     
     # Add optional artist matching
     if artist:
@@ -266,10 +269,10 @@ def _search_by_similarity(cursor, track):
     
     duration_ms = track.get('duration_ms')
     # Add duration matching with ±5 seconds tolerance
-    if duration_ms:
-        tolerance = 5000  # 5 seconds in milliseconds
-        query += " AND (duration_ms BETWEEN ? AND ? OR duration_ms IS NULL)"
-        params.extend([duration_ms - tolerance, duration_ms + tolerance])
+    #if duration_ms:
+    #    tolerance = 5000  # 5 seconds in milliseconds
+    #    query += " AND (duration_ms BETWEEN ? AND ? OR duration_ms IS NULL)"
+    #    params.extend([duration_ms - tolerance, duration_ms + tolerance])
     
     # Add year matching with ±1 year tolerance
     if year:
