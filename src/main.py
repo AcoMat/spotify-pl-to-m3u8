@@ -8,6 +8,7 @@ from platformdirs import user_music_dir
 import music_repository
 import spotify_service
 import yt_music_service
+from util import Spinner
 
 # Default to the OS user music directory provided by platformdirs
 DEFAULT_MUSIC_DIR = Path(user_music_dir())
@@ -71,7 +72,8 @@ def main():
         print(f"Error: Output directory path is not a directory: {args.output_dir}", file=sys.stderr)
         sys.exit(1)
 
-    music_repository.refresh_db_with_local(args.music_dir)
+    with Spinner("Scanning local music library"):
+        music_repository.refresh_db_with_local(args.music_dir)
 
     input_playlist_url = args.playlist_url.strip().lower()
     
@@ -83,7 +85,8 @@ def main():
             if not playlist_id:
                 print("Error: Could not extract playlist ID from Spotify URL.", file=sys.stderr)
                 sys.exit(1)
-            playlist = spotify_service.get_playlist(playlist_id)
+            with Spinner("Fetching Spotify playlist"):
+                playlist = spotify_service.get_playlist(playlist_id)
         except Exception as e:
             print(f"Error: Failed to retrieve Spotify playlist: {e}", file=sys.stderr)
             sys.exit(1)
@@ -96,7 +99,8 @@ def main():
             if not playlist_id:
                 print("Error: Could not extract playlist ID from YouTube URL.", file=sys.stderr)
                 sys.exit(1)
-            playlist = yt_music_service.get_playlist(playlist_id)
+            with Spinner("Fetching YouTube Music playlist"):
+                playlist = yt_music_service.get_playlist(playlist_id)
         except Exception as e:
             print(f"Error: Failed to retrieve YouTube Music playlist: {e}", file=sys.stderr)
             sys.exit(1)
@@ -115,15 +119,17 @@ def main():
 
     matched_tracks = []
     missing_tracks = []
-    for track in playlist.get('tracks', []):
-        local_track = music_repository.get_track_from_local(track)
-        if local_track:
-            if 'artist' not in local_track:
-                local_track['artist'] = local_track.get('album_artist')
-            matched_tracks.append(local_track)
-        else:
-            missing_tracks.append(track)
-            
+    with Spinner("Matching tracks with local library"):
+        for track in playlist.get('tracks', []):
+            local_track = music_repository.get_track_from_local(track)
+            if local_track:
+                if 'artist' not in local_track:
+                    local_track['artist'] = local_track.get('album_artist')
+                matched_tracks.append(local_track)
+            else:
+                missing_tracks.append(track)
+    
+    print(f"✓ Matched {len(matched_tracks)} tracks, {len(missing_tracks)} missing")
     _gen_m3u8_file(f"{playlist['name']}.m3u8", matched_tracks, missing_tracks, args.output_dir)
 
 if __name__ == "__main__":
