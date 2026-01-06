@@ -14,11 +14,12 @@ def get_playlist(playlist_id: str) -> list[dict]:
             total_tracks = api_res.get('trackCount', 0)
             playlist_name = api_res.get('title')
         for item in api_res.get('tracks', []):
+            album = item.get("album") or {}
             tracks.append({
                 "id": item.get("videoId"),
                 "title": item.get("title"),
-                "album_name": item.get("album", {}).get("name"),
-                "release_date": item.get("album", {}).get("year"),
+                "album_name": album.get("name"),
+                "release_date": album.get("year"),
                 "artist": ", ".join(artist.get("name") for artist in item.get("artists", [])),
                 "duration_ms": int(item.get("duration_seconds", 0)) * 1000,
             })
