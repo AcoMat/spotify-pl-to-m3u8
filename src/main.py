@@ -5,10 +5,8 @@ from pathlib import Path
 
 from platformdirs import user_music_dir
 
-import music_repository
-import spotify_service
-import yt_music_service
-from util import Spinner
+from src import music_repository, spotify_service, yt_music_service
+from src.util import Spinner
 
 # Default to the OS user music directory provided by platformdirs
 DEFAULT_MUSIC_DIR = Path(user_music_dir())

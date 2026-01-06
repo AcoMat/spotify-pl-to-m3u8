@@ -5,7 +5,7 @@ from mutagen import File
 from mutagen.id3 import ID3
 from pathlib import Path
 import platformdirs
-from util import _normalize_text
+from src.util import _normalize_text
 
 def get_database_path():
     """Get the database path using platformdirs."""
